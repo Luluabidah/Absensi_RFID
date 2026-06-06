@@ -2,6 +2,8 @@
 #include <HTTPClient.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 #define SS_PIN 5
 #define RST_PIN 27
@@ -11,12 +13,36 @@
 #define BUZZER 13
 
 MFRC522 rfid(SS_PIN, RST_PIN);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "vivo Y27s";
+const char* password = "fighting123";
 
 String scriptURL =
 "https://script.google.com/macros/s/AKfycbzVPL9faDCdGnMEDcOFebd0o4H9wJ8GtcVBgTBNCzug5C_AEJ2fKlbiTraUN8l7H5ymZQ/exec";
+
+void bunyiBerhasil() {
+  tone(BUZZER, 2000);
+  delay(300);
+  noTone(BUZZER);
+}
+
+void bunyiGagal() {
+  for (int i = 0; i < 3; i++) {
+    tone(BUZZER, 2000);
+    delay(200);
+    noTone(BUZZER);
+    delay(200);
+  }
+}
+
+void tampilStandby() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("SISTEM ABSENSI");
+  lcd.setCursor(0, 1);
+  lcd.print("TEMPEL KARTU");
+}
 
 void setup() {
 
@@ -29,22 +55,40 @@ void setup() {
   digitalWrite(LED_HIJAU, LOW);
   digitalWrite(LED_MERAH, LOW);
 
-  SPI.begin();
+  // LCD
+  Wire.begin(16, 17);
+  lcd.init();
+  lcd.backlight();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MENGHUBUNGKAN");
+  lcd.setCursor(0, 1);
+  lcd.print("WIFI...");
+
+  // RFID
+  SPI.begin(18, 19, 23, 5);
   rfid.PCD_Init();
+
+  byte versi = rfid.PCD_ReadRegister(MFRC522::VersionReg);
+
+  Serial.print("Versi RC522: 0x");
+  Serial.println(versi, HEX);
 
   Serial.println("Menghubungkan WiFi...");
 
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
-
     delay(500);
     Serial.print(".");
   }
 
   Serial.println();
   Serial.println("WiFi Terhubung");
-  Serial.println("Sistem Absensi Siap");
+
+  tampilStandby();
+
   Serial.println("Tempel Kartu...");
 }
 
@@ -69,70 +113,102 @@ void loop() {
   uid.toUpperCase();
 
   Serial.println();
+  Serial.println("Kartu Terbaca");
   Serial.println("UID : " + uid);
 
   if (WiFi.status() == WL_CONNECTED) {
 
     HTTPClient http;
 
-    String url = scriptURL +
-                 "?uid=" + uid;
+    String url = scriptURL + "?uid=" + uid;
 
-    Serial.println("Mengirim...");
-    Serial.println(url);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     http.begin(url);
 
-    int httpCode = http.GET();
+unsigned long mulai = millis();
 
-    Serial.print("HTTP Code : ");
-    Serial.println(httpCode);
+int httpCode = http.GET();
 
-    String response = http.getString();
+unsigned long selesai = millis();
 
-    Serial.println("Response:");
+Serial.print("Waktu HTTP : ");
+Serial.print(selesai - mulai);
+Serial.println(" ms");
+
+Serial.print("HTTP Code : ");
+Serial.println(httpCode);
+
+String response = http.getString();
+response.trim();
+
+    Serial.print("Response : ");
     Serial.println(response);
 
-    // =========================
-    // ABSEN BERHASIL
-    // =========================
+    if (response.startsWith("ABSEN_BERHASIL")) {
 
-    if (response.indexOf("ABSEN_BERHASIL") >= 0) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("ABSEN BERHASIL");
+
+      String nama = "";
+
+      int posisi = response.indexOf('|');
+
+      if (posisi > 0) {
+        nama = response.substring(posisi + 1);
+      }
+
+      lcd.setCursor(0, 1);
+
+      if (nama.length() > 16) {
+        nama = nama.substring(0, 16);
+      }
+
+      lcd.print(nama);
 
       digitalWrite(LED_HIJAU, HIGH);
 
-      tone(BUZZER, 2000);
-      delay(200);
-      noTone(BUZZER);
+      bunyiBerhasil();
 
-      delay(1000);
+      delay(2000);
 
       digitalWrite(LED_HIJAU, LOW);
 
-      Serial.println("ABSEN BERHASIL");
+      Serial.println("ABSENSI BERHASIL");
     }
 
-    // =========================
-    // TIDAK TERDAFTAR
-    // =========================
+    else if (response == "TIDAK_TERDAFTAR") {
 
-    else if (response.indexOf("TIDAK_TERDAFTAR") >= 0) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("KARTU TIDAK");
+
+      lcd.setCursor(0, 1);
+      lcd.print("TERDAFTAR");
 
       digitalWrite(LED_MERAH, HIGH);
 
-      for (int i = 0; i < 3; i++) {
+      bunyiGagal();
 
-        tone(BUZZER, 2000);
-        delay(200);
-        noTone(BUZZER);
-        delay(200);
-      }
-
-      delay(1000);
+      delay(2000);
 
       digitalWrite(LED_MERAH, LOW);
 
       Serial.println("KARTU TIDAK TERDAFTAR");
+    }
+
+    else {
+
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("ERROR RESPON");
+
+      lcd.setCursor(0, 1);
+      lcd.print("CEK SERVER");
+
+      Serial.println("RESPON TIDAK DIKENAL");
+      Serial.println(response);
     }
 
     http.end();
@@ -140,5 +216,10 @@ void loop() {
 
   rfid.PICC_HaltA();
 
-  delay(2000);
+  delay(1000);
+
+  tampilStandby();
+
+  Serial.println();
+  Serial.println("Tempel Kartu...");
 }
