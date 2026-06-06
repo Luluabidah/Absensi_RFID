@@ -15,8 +15,8 @@
 MFRC522 rfid(SS_PIN, RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-const char* ssid = "vivo Y27s";
-const char* password = "fighting123";
+const char* ssid = "";
+const char* password = "";
 
 String scriptURL =
 "https://script.google.com/macros/s/AKfycbzVPL9faDCdGnMEDcOFebd0o4H9wJ8GtcVBgTBNCzug5C_AEJ2fKlbiTraUN8l7H5ymZQ/exec";
